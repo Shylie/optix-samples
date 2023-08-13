@@ -91,6 +91,9 @@ struct Params
 	OptixTraversableHandle handle;
 
 	float distance_scale;
+
+	float4* normals;
+	uint4* indices;
 };
 
 struct RayGenData
@@ -104,8 +107,8 @@ struct MissData
 
 struct HitGroupData
 {
-	float3  emission_color;
-	float3  diffuse_color;
+	float3 emission_color;
+	float3 diffuse_color;
 };
 
 struct Vertex
@@ -119,10 +122,6 @@ struct Vertex
 		pad(1)
 	{ }
 
-	inline Vertex(float x, float y, float z, float) :
-		Vertex(x, y, z)
-	{ }
-
 	inline Vertex(float3 v) :
 		Vertex(v.x, v.y, v.z)
 	{ }
@@ -132,7 +131,7 @@ struct Vertex
 	{ }
 
 	inline operator float3() const { return make_float3(x, y, z); }
-	inline operator float4() const { return make_float4(x, y, z, pad); }
+	explicit inline operator float4() const { return make_float4(x, y, z, pad); }
 };
 
 struct IndexedTriangle

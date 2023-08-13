@@ -33,8 +33,6 @@
 #include <sutil/vec_math.h>
 #include <cuda/helpers.h>
 
-static constexpr float MINIMUM_ATTENUATION_IMPORTANCE = 0.01f;
-
 extern "C" {
 __constant__ Params params;
 }
@@ -273,7 +271,7 @@ extern "C" __global__ void __raygen__rg()
 		prd.seed = seed;
 		prd.done = false;
 
-		for (int i = 0; i < 256 && !prd.done && length(totalAttenuation) > MINIMUM_ATTENUATION_IMPORTANCE; i++)
+		for (int i = 0; i < 8 && !prd.done; i++)
 		{
 			traceRadiance(
 				params.handle,
@@ -331,13 +329,20 @@ extern "C" __global__ void __closesthit__radiance()
 
 	HitGroupData* rt_data = (HitGroupData*)optixGetSbtDataPointer();
 
+	const float2 barycentrics = optixGetTriangleBarycentrics();
+	const uint4 tri = params.indices[optixGetPrimitiveIndex()];
+
+	const float3 N_0 = make_float3(params.normals[tri.x]);
+	const float3 N_1 = make_float3(params.normals[tri.y]);
+	const float3 N_2 = make_float3(params.normals[tri.z]);
+
+	const float3 N =
+		N_0 * (1.0f - barycentrics.x - barycentrics.y) +
+		N_1 * barycentrics.x +
+		N_2 * barycentrics.y;
+
 	const float3 ray_dir = optixGetWorldRayDirection();
-
-	float3 verts[3];
-	optixGetTriangleVertexData(params.handle, optixGetPrimitiveIndex(), optixGetSbtGASIndex(), 0.0f, verts);
-	const float3 N_0 = normalize(cross(verts[1] - verts[0], verts[2] - verts[0]));
-
-	const float3 N = faceforward( N_0, -ray_dir, N_0 );
+	const float3 FFN = faceforward(N, -ray_dir, N);
 	const float Tmax = optixGetRayTmax();
 	const float3 P = optixGetWorldRayOrigin() + Tmax * ray_dir;
 
@@ -348,7 +353,7 @@ extern "C" __global__ void __closesthit__radiance()
 
 	float3 w_in;
 	cosine_sample_hemisphere(z1, z2, w_in);
-	Onb onb(N);
+	Onb onb(FFN);
 	onb.inverse_transform(w_in);
 
 	prd.attenuation = rt_data->diffuse_color;

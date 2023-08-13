@@ -72,7 +72,7 @@ sutil::Trackball trackball;
 // Mouse state
 int32_t mouse_button = -1;
 
-int32_t samples_per_launch = 1;
+int32_t samples_per_launch = 8;
 
 //------------------------------------------------------------------------------
 //
@@ -104,6 +104,8 @@ struct PathTracerState
 
 	OptixTraversableHandle         gas_handle = 0;  // Traversable handle for triangle AS
 	CUdeviceptr                    d_gas_output_buffer = 0;  // Triangle AS memory
+	CUdeviceptr                    normals = 0;
+	CUdeviceptr                    indices = 0;
 
 	OptixModule                    ptx_module = 0;
 	OptixPipelineCompileOptions    pipeline_compile_options = {};
@@ -115,7 +117,7 @@ struct PathTracerState
 
 	CUstream                       stream = 0;
 	Params                         params;
-	Params* d_params;
+	Params*                        d_params;
 
 	OptixShaderBindingTable        sbt = {};
 };
@@ -129,9 +131,13 @@ struct PathTracerState
 
 const geo::GeometryData geo_data = geo::GeometryData::MakeData(
 	{
-		geo::Box({ 200.0f, 200.0f, 200.0f }, sutil::Matrix4x4::identity(), { { 0.0f, 0.0f, 0.0f }, { 0.7f, 0.7f, 0.7f } }, geo::Box::All & ~(geo::Box::Front | geo::Box::Right)),
-		geo::Box({ 60.0f, 5.0f, 60.0f }, sutil::Matrix4x4::translate({ 0.0f, 97.4f, 0.0f }), { { 4.0f, 4.0f, 4.0f }, { 0.1f, 0.1f, 0.1f } }),
-		geo::Icosphere(25.0f, 6, sutil::Matrix4x4::identity(), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } })
+		geo::Box({ 200.0f, 200.0f, 200.0f }, geo::Box::All & ~(geo::Box::Right | geo::Box::Front), sutil::Matrix4x4::identity(), {{0.0f, 0.0f, 0.0f}, {0.4f, 0.4f, 0.4f}}),
+		geo::Box({ 60.0f, 5.0f, 60.0f }, sutil::Matrix4x4::translate({ 0.0f, 97.4f, 0.0f }), { { 5.0f, 5.0f, 5.0f }, { 0.1f, 0.1f, 0.1f } }),
+		geo::Icosphere(20.0f, 3, sutil::Matrix4x4::translate({ -60.0f, 0.0f, 60.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
+		geo::Icosphere(20.0f, 4, sutil::Matrix4x4::translate({ -30.0f, 0.0f, 30.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
+		geo::Icosphere(20.0f, 5, sutil::Matrix4x4::translate({ 0.0f, 0.0f, 0.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
+		geo::Icosphere(20.0f, 6, sutil::Matrix4x4::translate({ 30.0f, 0.0f, -30.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
+		geo::Icosphere(20.0f, 7, sutil::Matrix4x4::translate({ 60.0f, 0.0f, -60.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
 	}
 );
 
@@ -257,6 +263,9 @@ void initLaunchParams(PathTracerState& state)
 
 	state.params.distance_scale = 1.0f / 250.0f;
 
+	state.params.normals = reinterpret_cast<float4*>(state.normals);
+	state.params.indices = reinterpret_cast<uint4*>(state.indices);
+
 	CUDA_CHECK(cudaStreamCreate(&state.stream));
 	CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&state.d_params), sizeof(Params)));
 }
@@ -350,8 +359,8 @@ static void context_log_cb(unsigned int level, const char* tag, const char* mess
 
 void initCameraState()
 {
-	camera.setEye(make_float3(350.0f, 40.0f, 350.0f));
-	camera.setLookat(make_float3(0.0f, -10.0f, 0.0f));
+	camera.setEye(make_float3(350.0f, 20.0f, 350.0f));
+	camera.setLookat(make_float3(0.0f, 0.0f, 0.0f));
 	camera.setUp(make_float3(0.0f, 1.0f, 0.0f));
 	camera.setFovY(45.0f);
 	camera_changed = true;
@@ -402,11 +411,10 @@ void buildMeshAccel(PathTracerState& state)
 		cudaMemcpyHostToDevice
 	));
 
-	CUdeviceptr d_vertex_indices = 0;
 	const size_t vertex_indices_size_in_bytes = geo_data.vertex_indices.size() * sizeof(IndexedTriangle);
-	CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_vertex_indices), vertex_indices_size_in_bytes));
+	CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&state.indices), vertex_indices_size_in_bytes));
 	CUDA_CHECK(cudaMemcpy(
-		reinterpret_cast<void*>(d_vertex_indices),
+		reinterpret_cast<void*>(state.indices),
 		geo_data.vertex_indices.data(),
 		vertex_indices_size_in_bytes,
 		cudaMemcpyHostToDevice
@@ -419,6 +427,15 @@ void buildMeshAccel(PathTracerState& state)
 		reinterpret_cast<void*>(d_mat_indices),
 		geo_data.material_indices.data(),
 		mat_indices_size_in_bytes,
+		cudaMemcpyHostToDevice
+	));
+
+	const size_t normals_size_in_bytes = geo_data.normals.size() * sizeof(Vertex);
+	CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&state.normals), normals_size_in_bytes));
+	CUDA_CHECK(cudaMemcpy(
+		reinterpret_cast<void*>(state.normals),
+		geo_data.normals.data(),
+		normals_size_in_bytes,
 		cudaMemcpyHostToDevice
 	));
 
@@ -438,7 +455,7 @@ void buildMeshAccel(PathTracerState& state)
 	triangle_input.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
 	triangle_input.triangleArray.indexStrideInBytes = sizeof(IndexedTriangle);
 	triangle_input.triangleArray.numIndexTriplets = static_cast<uint32_t>(geo_data.vertex_indices.size());
-	triangle_input.triangleArray.indexBuffer = d_vertex_indices;
+	triangle_input.triangleArray.indexBuffer = state.indices;
 
 	triangle_input.triangleArray.numSbtRecords = geo_data.materials.size();
 	triangle_input.triangleArray.sbtIndexOffsetBuffer = d_mat_indices;
@@ -448,7 +465,7 @@ void buildMeshAccel(PathTracerState& state)
 	triangle_input.triangleArray.flags = triangle_input_flags.data();
 
 	OptixAccelBuildOptions accel_options = {};
-	accel_options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS;
+	accel_options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
 	accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
 	OptixAccelBufferSizes gas_buffer_sizes;
@@ -491,7 +508,6 @@ void buildMeshAccel(PathTracerState& state)
 	));
 
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_vertices)));
-	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_vertex_indices)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_temp_buffer)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_mat_indices)));
 
@@ -610,7 +626,7 @@ void createPipeline(PathTracerState& state)
 	};
 
 	OptixPipelineLinkOptions pipeline_link_options = {};
-	pipeline_link_options.maxTraceDepth = 2;
+	pipeline_link_options.maxTraceDepth = 1;
 
 	OPTIX_CHECK_LOG(optixPipelineCreate(
 		state.context,
@@ -740,6 +756,8 @@ void cleanupState(PathTracerState& state)
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.sbt.missRecordBase)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.sbt.hitgroupRecordBase)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.d_gas_output_buffer)));
+	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.normals)));
+	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.indices)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.params.accum_buffer)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.d_params)));
 }

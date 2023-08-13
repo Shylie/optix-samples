@@ -11,6 +11,7 @@
 namespace geo
 {
 	using Vertices = std::vector<Vertex>;
+	using Normals = std::vector<Vertex>;
 	using Materials = std::vector<HitGroupData>;
 	using MaterialIndices = std::vector<uint32_t>;
 	using VertexIndices = std::vector<IndexedTriangle>;
@@ -20,6 +21,7 @@ namespace geo
 	{
 	public:
 		const Vertices& GetVertices() const;
+		const Normals& GetNormals() const;
 		const VertexIndices& GetIndices() const;
 		HitGroupData GetData() const;
 
@@ -28,7 +30,10 @@ namespace geo
 
 	private:
 		VerticesIndices vertices_indices;
+		Normals normals;
 		HitGroupData data;
+
+		Normals CalculateNormals(const VerticesIndices&);
 	};
 
 	class Box : public Geometry
@@ -45,19 +50,21 @@ namespace geo
 			All = Bottom | Top | Left | Right | Back | Front
 		};
 
-		Box(float3 size, sutil::Matrix4x4 transform, HitGroupData data, unsigned char faces = All);
+		Box(float3 size, sutil::Matrix4x4 transform, HitGroupData data);
+		Box(float3 size, unsigned char faces, sutil::Matrix4x4 transform, HitGroupData data);
 	
 	private:
-		static VerticesIndices Make(float3 size, sutil::Matrix4x4 transform, unsigned char faces);
+		static VerticesIndices Make(float3 size, unsigned char faces, sutil::Matrix4x4 transform);
 	};
 
 	class Icosphere : public Geometry
 	{
 	public:
 		Icosphere(float radius, unsigned int subdivisions, sutil::Matrix4x4 transform, HitGroupData data);
+		Icosphere(float radius, float randomness, unsigned int subdivisions, sutil::Matrix4x4 transform, HitGroupData data);
 
 	private:
-		static VerticesIndices Make(float radius, unsigned int subdivisions, sutil::Matrix4x4 transform);
+		static VerticesIndices Make(float radius, unsigned int subdivisions, float randomness, sutil::Matrix4x4 transform);
 	};
 
 	struct GeometryData
@@ -66,6 +73,7 @@ namespace geo
 		static GeometryData MakeData(std::vector<Geometry> geometries);
 
 		Vertices vertices;
+		Normals normals;
 		VertexIndices vertex_indices;
 		Materials materials;
 		MaterialIndices material_indices;

@@ -7,20 +7,50 @@
 
 namespace geo
 {
+	const Vertices& Geometry::GetVertices() const { return vertices_indices.first; }
+	const Normals& Geometry::GetNormals() const { return normals; }
+	const VertexIndices& Geometry::GetIndices() const { return vertices_indices.second; }
+	HitGroupData Geometry::GetData() const { return data; }
+
 	Geometry::Geometry(VerticesIndices vertices_indices, HitGroupData data) :
 		vertices_indices(vertices_indices),
+		normals(CalculateNormals(vertices_indices)),
 		data(data)
 	{ }
 
-	HitGroupData Geometry::GetData() const { return data; }
-	const Vertices& Geometry::GetVertices() const { return vertices_indices.first; }
-	const VertexIndices& Geometry::GetIndices() const { return vertices_indices.second; }
+	Normals Geometry::CalculateNormals(const VerticesIndices& vertices_indices)
+	{
+		Normals normals(vertices_indices.first.size(), { 0.0f, 0.0f, 0.0f });
 
-	Box::Box(float3 size, sutil::Matrix4x4 transform, HitGroupData data, unsigned char faces) :
-		Geometry(Make(size, transform, faces), data)
+		for (const IndexedTriangle& triangle : vertices_indices.second)
+		{
+			const float3 v21 = vertices_indices.first[triangle.v2] - vertices_indices.first[triangle.v1];
+			const float3 v31 = vertices_indices.first[triangle.v3] - vertices_indices.first[triangle.v1];
+
+			const float3 normal = normalize(cross(v21, v31));
+
+			normals[triangle.v1] = normals[triangle.v1] + normal;
+			normals[triangle.v2] = normals[triangle.v2] + normal;
+			normals[triangle.v3] = normals[triangle.v3] + normal;
+		}
+
+		for (auto& normal : normals)
+		{
+			normal = normalize(normal);
+		}
+
+		return normals;
+	}
+
+	Box::Box(float3 size, sutil::Matrix4x4 transform, HitGroupData data) :
+		Box(size, All, transform, data)
 	{ }
 
-	VerticesIndices Box::Make(float3 size, sutil::Matrix4x4 transform, unsigned char faces)
+	Box::Box(float3 size, unsigned char faces, sutil::Matrix4x4 transform, HitGroupData data) :
+		Geometry(Make(size, faces, transform), data)
+	{ }
+
+	VerticesIndices Box::Make(float3 size, unsigned char faces, sutil::Matrix4x4 transform)
 	{
 		VerticesIndices v;
 
@@ -35,53 +65,57 @@ namespace geo
 
 		for (Vertex& vertex : v.first)
 		{
-			vertex = transform * vertex;
+			vertex = transform * static_cast<float4>(vertex);
 		}
 
 		if (faces & Bottom)
 		{
 			v.second.push_back({ 7, 6, 2 });
-			v.second.push_back({ 7, 3, 2 });
+			v.second.push_back({ 7, 2, 3 });
 		}
 
 		if (faces & Top)
 		{
-			v.second.push_back({ 5, 4, 0 });
+			v.second.push_back({ 5, 0, 4 });
 			v.second.push_back({ 5, 1, 0 });
 		}
 
 		if (faces & Left)
 		{
 			v.second.push_back({ 7, 3, 1 });
-			v.second.push_back({ 7, 5, 1 });
+			v.second.push_back({ 7, 1, 5 });
 		}
 
 		if (faces & Right)
 		{
-			v.second.push_back({ 6, 2, 0 });
+			v.second.push_back({ 6, 0, 2 });
 			v.second.push_back({ 6, 4, 0 });
 		}
 
 		if (faces & Back)
 		{
-			v.second.push_back({ 7, 6, 4 });
+			v.second.push_back({ 7, 4, 6 });
 			v.second.push_back({ 7, 5, 4 });
 		}
 
 		if (faces & Front)
 		{
 			v.second.push_back({ 3, 2, 0 });
-			v.second.push_back({ 3, 1, 0 });
+			v.second.push_back({ 3, 0, 1 });
 		}
 
 		return v;
 	}
 
 	Icosphere::Icosphere(float radius, unsigned int subdivisions, sutil::Matrix4x4 transform, HitGroupData data) :
-		Geometry(Make(radius, subdivisions, transform), data)
+		Icosphere(radius, 0.0f, subdivisions, transform, data)
 	{ }
 
-	VerticesIndices Icosphere::Make(float radius, unsigned int subdivisions, sutil::Matrix4x4 transform)
+	Icosphere::Icosphere(float radius, float randomness, unsigned int subdivisions, sutil::Matrix4x4 transform, HitGroupData data) :
+		Geometry(Make(radius, subdivisions, randomness, transform), data)
+	{ }
+
+	VerticesIndices Icosphere::Make(float radius, unsigned int subdivisions, float randomness, sutil::Matrix4x4 transform)
 	{
 		constexpr float X = 0.5f;
 		constexpr float Z = 0.951f;
@@ -111,7 +145,7 @@ namespace geo
 
 		for (float3& vertex : vertices)
 		{
-			vertex = getrad(radius / 2.0f) * normalize(vertex);
+			vertex = getrad(randomness) * normalize(vertex);
 		}
 
 		std::vector<uint3> indices =
@@ -154,7 +188,7 @@ namespace geo
 				const float3& edge0 = vertices[first];
 				const float3& edge1 = vertices[second];
 
-				vertices.push_back(getrad(radius / 2.0f) * normalize(edge0 + edge1));
+				vertices.push_back(getrad(randomness) * normalize(edge0 + edge1));
 			}
 
 			return inserted.first->second;
@@ -190,7 +224,7 @@ namespace geo
 
 		for (const float3& vertex : vertices)
 		{
-			v.first.emplace_back(transform * Vertex(vertex));
+			v.first.emplace_back(transform * make_float4(vertex, 1.0f));
 		}
 
 		for (const uint3& index : indices)
@@ -219,6 +253,11 @@ namespace geo
 			for (const Vertex& v : g.GetVertices())
 			{
 				data.vertices.push_back(v);
+			}
+
+			for (const Vertex& n : g.GetNormals())
+			{
+				data.normals.push_back(n);
 			}
 
 			data.materials.push_back(g.GetData());
