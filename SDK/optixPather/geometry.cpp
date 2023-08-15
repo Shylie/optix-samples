@@ -63,45 +63,113 @@ namespace geo
 		v.first.emplace_back(make_float3( size.x / 2, -size.y / 2, -size.z / 2)); // 6
 		v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2, -size.z / 2)); // 7
 
-		for (Vertex& vertex : v.first)
-		{
-			vertex = transform * static_cast<float4>(vertex);
-		}
+		v.first.emplace_back(make_float3( size.x / 2, 0.0f, 0.0f)); // 8
+		v.first.emplace_back(make_float3(-size.x / 2, 0.0f, 0.0f)); // 9
+		v.first.emplace_back(make_float3(0.0f,  size.y / 2, 0.0f)); // 10
+		v.first.emplace_back(make_float3(0.0f, -size.y / 2, 0.0f)); // 11
+		v.first.emplace_back(make_float3(0.0f, 0.0f,  size.z / 2)); // 12
+		v.first.emplace_back(make_float3(0.0f, 0.0f, -size.z / 2)); // 13
 
 		if (faces & Bottom)
 		{
-			v.second.push_back({ 7, 6, 2 });
-			v.second.push_back({ 7, 2, 3 });
+			const unsigned int begin = v.first.size();
+
+			v.first.emplace_back(make_float3(size.x / 2, -size.y / 2, size.z / 2)); // 2
+			v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2, size.z / 2)); // 3
+			v.first.emplace_back(make_float3(size.x / 2, -size.y / 2, -size.z / 2)); // 6
+			v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2, -size.z / 2)); // 7
+			v.first.emplace_back(make_float3(0.0f, -size.y / 2, 0.0f)); // 11
+
+			v.second.push_back({ begin + 3, begin + 2, begin + 4 });
+			v.second.push_back({ begin + 2, begin + 0, begin + 4 });
+			v.second.push_back({ begin + 0, begin + 1, begin + 4 });
+			v.second.push_back({ begin + 1, begin + 3, begin + 4 });
 		}
 
 		if (faces & Top)
 		{
-			v.second.push_back({ 5, 0, 4 });
-			v.second.push_back({ 5, 1, 0 });
+			const unsigned int begin = v.first.size();
+
+			v.first.emplace_back(make_float3(size.x / 2, size.y / 2, size.z / 2)); // 0
+			v.first.emplace_back(make_float3(-size.x / 2, size.y / 2, size.z / 2)); // 1
+			v.first.emplace_back(make_float3(size.x / 2, size.y / 2, -size.z / 2)); // 4
+			v.first.emplace_back(make_float3(-size.x / 2, size.y / 2, -size.z / 2)); // 5
+			v.first.emplace_back(make_float3(0.0f, size.y / 2, 0.0f)); // 10
+
+
+			v.second.push_back({ begin + 3, begin + 4, begin + 2 });
+			v.second.push_back({ begin + 2, begin + 4, begin + 0 });
+			v.second.push_back({ begin + 0, begin + 4, begin + 1 });
+			v.second.push_back({ begin + 1, begin + 4, begin + 3 });
 		}
 
 		if (faces & Left)
 		{
-			v.second.push_back({ 7, 3, 1 });
-			v.second.push_back({ 7, 1, 5 });
+			const unsigned int begin = v.first.size();
+
+			v.first.emplace_back(make_float3(-size.x / 2, size.y / 2, size.z / 2)); // 1
+			v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2, size.z / 2)); // 3
+			v.first.emplace_back(make_float3(-size.x / 2, size.y / 2, -size.z / 2)); // 5
+			v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2, -size.z / 2)); // 7
+			v.first.emplace_back(make_float3(-size.x / 2, 0.0f, 0.0f)); // 9
+
+			v.second.push_back({ begin + 3, begin + 1, begin + 4 });
+			v.second.push_back({ begin + 1, begin + 0, begin + 4 });
+			v.second.push_back({ begin + 0, begin + 2, begin + 4 });
+			v.second.push_back({ begin + 2, begin + 3, begin + 4 });
 		}
 
 		if (faces & Right)
 		{
-			v.second.push_back({ 6, 0, 2 });
-			v.second.push_back({ 6, 4, 0 });
+			const unsigned int begin = v.first.size();
+
+			v.first.emplace_back(make_float3(size.x / 2, size.y / 2, size.z / 2)); // 0
+			v.first.emplace_back(make_float3(size.x / 2, -size.y / 2, size.z / 2)); // 2
+			v.first.emplace_back(make_float3(size.x / 2, size.y / 2, -size.z / 2)); // 4
+			v.first.emplace_back(make_float3(size.x / 2, -size.y / 2, -size.z / 2)); // 6
+			v.first.emplace_back(make_float3(size.x / 2, 0.0f, 0.0f)); // 8
+
+			v.second.push_back({ begin + 3, begin + 4, begin + 1 });
+			v.second.push_back({ begin + 1, begin + 4, begin + 0 });
+			v.second.push_back({ begin + 0, begin + 4, begin + 2 });
+			v.second.push_back({ begin + 2, begin + 4, begin + 3 });
 		}
 
 		if (faces & Back)
 		{
-			v.second.push_back({ 7, 4, 6 });
-			v.second.push_back({ 7, 5, 4 });
+			const unsigned int begin = v.first.size();
+
+			v.first.emplace_back(make_float3(size.x / 2, size.y / 2, -size.z / 2)); // 4
+			v.first.emplace_back(make_float3(-size.x / 2, size.y / 2, -size.z / 2)); // 5
+			v.first.emplace_back(make_float3(size.x / 2, -size.y / 2, -size.z / 2)); // 6
+			v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2, -size.z / 2)); // 7
+			v.first.emplace_back(make_float3(0.0f, 0.0f, -size.z / 2)); // 13
+
+			v.second.push_back({ begin + 3, begin + 4, begin + 2 });
+			v.second.push_back({ begin + 2, begin + 4, begin + 0 });
+			v.second.push_back({ begin + 0, begin + 4, begin + 1 });
+			v.second.push_back({ begin + 1, begin + 4, begin + 3 });
 		}
 
 		if (faces & Front)
 		{
-			v.second.push_back({ 3, 2, 0 });
-			v.second.push_back({ 3, 0, 1 });
+			const unsigned int begin = v.first.size();
+
+			v.first.emplace_back(make_float3(size.x / 2, size.y / 2, size.z / 2)); // 0
+			v.first.emplace_back(make_float3(-size.x / 2, size.y / 2, size.z / 2)); // 1
+			v.first.emplace_back(make_float3(size.x / 2, -size.y / 2, size.z / 2)); // 2
+			v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2, size.z / 2)); // 3
+			v.first.emplace_back(make_float3(0.0f, 0.0f, size.z / 2)); // 12
+
+			v.second.push_back({ begin + 3, begin + 2, begin + 4 });
+			v.second.push_back({ begin + 2, begin + 0, begin + 4 });
+			v.second.push_back({ begin + 0, begin + 1, begin + 4 });
+			v.second.push_back({ begin + 1, begin + 3, begin + 4 });
+		}
+
+		for (Vertex& vertex : v.first)
+		{
+			vertex = transform * static_cast<float4>(vertex);
 		}
 
 		return v;
