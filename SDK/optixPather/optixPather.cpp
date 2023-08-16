@@ -72,7 +72,7 @@ sutil::Trackball trackball;
 // Mouse state
 int32_t mouse_button = -1;
 
-int32_t samples_per_launch = 8;
+int32_t samples_per_launch = 4;
 
 //------------------------------------------------------------------------------
 //
@@ -91,12 +91,12 @@ struct Record
 typedef Record<RayGenData>   RayGenRecord;
 typedef Record<MissData>     MissRecord;
 typedef Record<HitGroupData> HitGroupRecord;
+typedef Record<CallableData> CallableRecord;
 
 struct Instance
 {
 	float transform[12];
 };
-
 
 struct PathTracerState
 {
@@ -112,8 +112,9 @@ struct PathTracerState
 	OptixPipeline                  pipeline = 0;
 
 	OptixProgramGroup              raygen_prog_group = 0;
-	OptixProgramGroup              radiance_miss_group = 0;
-	OptixProgramGroup              radiance_hit_group = 0;
+	OptixProgramGroup              miss_prog_group = 0;
+	OptixProgramGroup              hit_prog_group = 0;
+	OptixProgramGroup              callable_prog_groups[Material::Miss] = { };
 
 	CUstream                       stream = 0;
 	Params                         params;
@@ -131,13 +132,13 @@ struct PathTracerState
 
 const geo::GeometryData geo_data = geo::GeometryData::MakeData(
 	{
-		geo::Box({ 200.0f, 200.0f, 200.0f }, geo::Box::All & ~(geo::Box::Right | geo::Box::Front), sutil::Matrix4x4::identity(), {{0.0f, 0.0f, 0.0f}, {0.4f, 0.4f, 0.4f}}),
-		geo::Box({ 60.0f, 5.0f, 60.0f }, sutil::Matrix4x4::translate({ 0.0f, 97.4f, 0.0f }), { { 5.0f, 5.0f, 5.0f }, { 0.1f, 0.1f, 0.1f } }),
-		geo::Icosphere(20.0f, 3, sutil::Matrix4x4::translate({ -60.0f, 0.0f, 60.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
-		geo::Icosphere(20.0f, 4, sutil::Matrix4x4::translate({ -30.0f, 0.0f, 30.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
-		geo::Icosphere(20.0f, 5, sutil::Matrix4x4::translate({ 0.0f, 0.0f, 0.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
-		geo::Icosphere(20.0f, 6, sutil::Matrix4x4::translate({ 30.0f, 0.0f, -30.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
-		geo::Icosphere(20.0f, 7, sutil::Matrix4x4::translate({ 60.0f, 0.0f, -60.0f }), { { 0.0f, 0.0f, 0.0f }, { 0.6f, 0.9f, 0.15f } }),
+		geo::Box({ 300.0f, 200.0f, 200.0f }, ~geo::Box::Right, sutil::Matrix4x4::translate({50.0f, 0.0f, 0.0f}), LambertianData{{0.3f, 0.3f, 0.3f}, {0.0f, 0.0f, 0.0f}}),
+		geo::Box({ 60.0f, 5.0f, 60.0f }, sutil::Matrix4x4::translate({ 0.0f, 97.4f, 0.0f }), LambertianData{ { 0.1f, 0.1f, 0.1f }, { 7.5f, 7.5f, 7.5f } }),
+		geo::Box({ 60.0f, 125.0f, 60.0f }, sutil::Matrix4x4::translate({ -45.0f, -37.4f, -45.0f }) * sutil::Matrix4x4::rotate(1.4f, { 0.0f, 1.0f, 0.0f }), LambertianData{ { 0.9f, 0.4f, 0.1f }, { 0.0f, 0.0f, 0.0f } }),
+		geo::Box({ 40.0f, 65.0f, 40.0f }, sutil::Matrix4x4::translate({ 45.0f, -67.4f, 45.0f }) * sutil::Matrix4x4::rotate(-1.2f, { 0.0f, 1.0f, 0.0f }), LambertianData{ { 0.9f, 0.4f, 0.1f }, { 0.0f, 0.0f, 0.0f } }),
+		geo::Icosphere(20.0f, 3, sutil::Matrix4x4::translate({ -60.0f, 0.0f, 60.0f }), MetalData{ { 0.6f, 0.9f, 0.15f }, { 0.0f, 0.0f, 0.0f } }),
+		geo::Icosphere(20.0f, 3, sutil::Matrix4x4::translate({ 30.0f, -55.0f, -30.0f }), GlassData{ { 0.8f, 0.2f, 0.8f }, { 0.0f, 0.0f, 0.0f }, 1.54f }),
+		geo::Icosphere(20.0f, 3, sutil::Matrix4x4::translate({ 60.0f, 0.0f, -60.0f }), LambertianData{ { 0.6f, 0.9f, 0.15f }, { 0.0f, 0.0f, 0.0f } }),
 	}
 );
 
@@ -359,7 +360,7 @@ static void context_log_cb(unsigned int level, const char* tag, const char* mess
 
 void initCameraState()
 {
-	camera.setEye(make_float3(350.0f, 20.0f, 350.0f));
+	camera.setEye(make_float3(250.0f, 40.0f, 0.0f));
 	camera.setLookat(make_float3(0.0f, 0.0f, 0.0f));
 	camera.setUp(make_float3(0.0f, 1.0f, 0.0f));
 	camera.setFovY(45.0f);
@@ -595,7 +596,7 @@ void createProgramGroups(PathTracerState& state)
 			1,  // num program groups
 			&program_group_options,
 			LOG, &LOG_SIZE,
-			&state.radiance_miss_group
+			&state.miss_prog_group
 		));
 	}
 
@@ -610,7 +611,36 @@ void createProgramGroups(PathTracerState& state)
 			1,  // num program groups
 			&program_group_options,
 			LOG, &LOG_SIZE,
-			&state.radiance_hit_group
+			&state.hit_prog_group
+		));
+	}
+	
+	{
+		OptixProgramGroupDesc callable_prog_group_descs[Material::Miss] = { };
+
+		callable_prog_group_descs[0].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+		callable_prog_group_descs[0].callables.moduleDC = state.ptx_module;
+		callable_prog_group_descs[0].callables.entryFunctionNameDC = "__direct_callable__lambertian";
+
+		callable_prog_group_descs[1].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+		callable_prog_group_descs[1].callables.moduleDC = state.ptx_module;
+		callable_prog_group_descs[1].callables.entryFunctionNameDC = "__direct_callable__metal";
+
+		callable_prog_group_descs[2].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+		callable_prog_group_descs[2].callables.moduleDC = state.ptx_module;
+		callable_prog_group_descs[2].callables.entryFunctionNameDC = "__direct_callable__glass";
+
+		callable_prog_group_descs[3].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+		callable_prog_group_descs[3].callables.moduleDC = state.ptx_module;
+		callable_prog_group_descs[3].callables.entryFunctionNameDC = "__direct_callable__test";
+
+		OPTIX_CHECK_LOG(optixProgramGroupCreate(
+			state.context,
+			callable_prog_group_descs,
+			Material::Miss,
+			&program_group_options,
+			LOG, &LOG_SIZE,
+			state.callable_prog_groups
 		));
 	}
 }
@@ -621,8 +651,8 @@ void createPipeline(PathTracerState& state)
 	OptixProgramGroup program_groups[] =
 	{
 		state.raygen_prog_group,
-		state.radiance_miss_group,
-		state.radiance_hit_group,
+		state.miss_prog_group,
+		state.hit_prog_group,
 	};
 
 	OptixPipelineLinkOptions pipeline_link_options = {};
@@ -642,8 +672,13 @@ void createPipeline(PathTracerState& state)
 	// parameters to optixPipelineSetStackSize.
 	OptixStackSizes stack_sizes = {};
 	OPTIX_CHECK(optixUtilAccumulateStackSizes(state.raygen_prog_group, &stack_sizes, state.pipeline));
-	OPTIX_CHECK(optixUtilAccumulateStackSizes(state.radiance_miss_group, &stack_sizes, state.pipeline));
-	OPTIX_CHECK(optixUtilAccumulateStackSizes(state.radiance_hit_group, &stack_sizes, state.pipeline));
+	OPTIX_CHECK(optixUtilAccumulateStackSizes(state.miss_prog_group, &stack_sizes, state.pipeline));
+	OPTIX_CHECK(optixUtilAccumulateStackSizes(state.hit_prog_group, &stack_sizes, state.pipeline));
+
+	for (int i = 0; i < Material::Miss; i++)
+	{
+		OPTIX_CHECK(optixUtilAccumulateStackSizes(state.callable_prog_groups[i], &stack_sizes, state.pipeline));
+	}
 
 	uint32_t max_trace_depth = 2;
 	uint32_t max_cc_depth = 0;
@@ -694,7 +729,7 @@ void createSBT(PathTracerState& state)
 	CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_miss_records), miss_record_size * RAY_TYPE_COUNT));
 
 	MissRecord ms_sbt[1];
-	OPTIX_CHECK(optixSbtRecordPackHeader(state.radiance_miss_group, &ms_sbt[0]));
+	OPTIX_CHECK(optixSbtRecordPackHeader(state.miss_prog_group, &ms_sbt[0]));
 	ms_sbt[0].data.bg_color = make_float4(0.0f);
 
 	CUDA_CHECK(cudaMemcpy(
@@ -717,7 +752,7 @@ void createSBT(PathTracerState& state)
 		{
 			const int sbt_idx = i * RAY_TYPE_COUNT + 0;  // SBT for radiance ray-type for ith material
 
-			OPTIX_CHECK(optixSbtRecordPackHeader(state.radiance_hit_group, &hitgroup_records[sbt_idx]));
+			OPTIX_CHECK(optixSbtRecordPackHeader(state.hit_prog_group, &hitgroup_records[sbt_idx]));
 			hitgroup_records[sbt_idx].data = geo_data.materials[i];
 		}
 
@@ -732,6 +767,21 @@ void createSBT(PathTracerState& state)
 		cudaMemcpyHostToDevice
 	));
 
+	CallableRecord callable_records[Material::Miss];
+	for (int i = 0; i < Material::Miss; i++)
+	{
+		OPTIX_CHECK(optixSbtRecordPackHeader(state.callable_prog_groups[i], &callable_records[i]));
+	}
+
+	CUdeviceptr d_callable_records;
+	CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_callable_records), Material::Miss * sizeof(CallableRecord)));
+	CUDA_CHECK(cudaMemcpy(
+		reinterpret_cast<void*>(d_callable_records),
+		callable_records,
+		Material::Miss * sizeof(CallableRecord),
+		cudaMemcpyHostToDevice
+	));
+
 	state.sbt.raygenRecord = d_raygen_record;
 	state.sbt.missRecordBase = d_miss_records;
 	state.sbt.missRecordStrideInBytes = static_cast<uint32_t>(miss_record_size);
@@ -739,6 +789,9 @@ void createSBT(PathTracerState& state)
 	state.sbt.hitgroupRecordBase = d_hitgroup_records;
 	state.sbt.hitgroupRecordStrideInBytes = static_cast<uint32_t>(hitgroup_record_size);
 	state.sbt.hitgroupRecordCount = RAY_TYPE_COUNT * geo_data.materials.size();
+	state.sbt.callablesRecordBase = d_callable_records;
+	state.sbt.callablesRecordCount = Material::Miss;
+	state.sbt.callablesRecordStrideInBytes = sizeof(CallableRecord);
 }
 
 
@@ -746,8 +799,12 @@ void cleanupState(PathTracerState& state)
 {
 	OPTIX_CHECK(optixPipelineDestroy(state.pipeline));
 	OPTIX_CHECK(optixProgramGroupDestroy(state.raygen_prog_group));
-	OPTIX_CHECK(optixProgramGroupDestroy(state.radiance_miss_group));
-	OPTIX_CHECK(optixProgramGroupDestroy(state.radiance_hit_group));
+	OPTIX_CHECK(optixProgramGroupDestroy(state.miss_prog_group));
+	OPTIX_CHECK(optixProgramGroupDestroy(state.hit_prog_group));
+	for (int i = 0; i < Material::Miss; i++)
+	{
+		OPTIX_CHECK(optixProgramGroupDestroy(state.callable_prog_groups[i]));
+	}
 	OPTIX_CHECK(optixModuleDestroy(state.ptx_module));
 	OPTIX_CHECK(optixDeviceContextDestroy(state.context));
 
@@ -755,6 +812,7 @@ void cleanupState(PathTracerState& state)
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.sbt.raygenRecord)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.sbt.missRecordBase)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.sbt.hitgroupRecordBase)));
+	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.sbt.callablesRecordBase)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.d_gas_output_buffer)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.normals)));
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.indices)));

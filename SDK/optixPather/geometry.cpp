@@ -54,22 +54,6 @@ namespace geo
 	{
 		VerticesIndices v;
 
-		v.first.emplace_back(make_float3( size.x / 2,  size.y / 2,  size.z / 2)); // 0
-		v.first.emplace_back(make_float3(-size.x / 2,  size.y / 2,  size.z / 2)); // 1
-		v.first.emplace_back(make_float3( size.x / 2, -size.y / 2,  size.z / 2)); // 2
-		v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2,  size.z / 2)); // 3
-		v.first.emplace_back(make_float3( size.x / 2,  size.y / 2, -size.z / 2)); // 4
-		v.first.emplace_back(make_float3(-size.x / 2,  size.y / 2, -size.z / 2)); // 5
-		v.first.emplace_back(make_float3( size.x / 2, -size.y / 2, -size.z / 2)); // 6
-		v.first.emplace_back(make_float3(-size.x / 2, -size.y / 2, -size.z / 2)); // 7
-
-		v.first.emplace_back(make_float3( size.x / 2, 0.0f, 0.0f)); // 8
-		v.first.emplace_back(make_float3(-size.x / 2, 0.0f, 0.0f)); // 9
-		v.first.emplace_back(make_float3(0.0f,  size.y / 2, 0.0f)); // 10
-		v.first.emplace_back(make_float3(0.0f, -size.y / 2, 0.0f)); // 11
-		v.first.emplace_back(make_float3(0.0f, 0.0f,  size.z / 2)); // 12
-		v.first.emplace_back(make_float3(0.0f, 0.0f, -size.z / 2)); // 13
-
 		if (faces & Bottom)
 		{
 			const unsigned int begin = v.first.size();

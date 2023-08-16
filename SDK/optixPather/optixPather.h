@@ -100,15 +100,94 @@ struct RayGenData
 {
 };
 
+namespace Material
+{
+	enum
+	{
+		Lambertian,
+		Metal,
+		Glass,
+		Test,
+		Miss // Also used to count the number of materials
+	};
+}
+
+struct CommonData
+{
+	unsigned int material_type = Material::Miss;
+};
+
 struct MissData
 {
+	CommonData common;
+
 	float4 bg_color;
+};
+
+struct LambertianData
+{
+	float3 attenuation;
+	float3 emitted;
+};
+
+struct MetalData
+{
+	float3 attenuation;
+	float3 emitted;
+};
+
+struct GlassData
+{
+	float3 attenuation;
+	float3 emitted;
+	float refractive_index;
+};
+
+struct TestData
+{
+	float3 attenuation;
+	float3 emitted;
 };
 
 struct HitGroupData
 {
-	float3 emission_color;
-	float3 diffuse_color;
+	CommonData common;
+
+	union
+	{
+		LambertianData lambertian;
+		MetalData metal;
+		GlassData glass;
+		TestData test;
+	};
+
+	HitGroupData() :
+		HitGroupData(LambertianData{})
+	{ }
+
+	HitGroupData(LambertianData lambertian) :
+		common({ Material::Lambertian }),
+		lambertian(lambertian)
+	{ }
+
+	HitGroupData(MetalData metal) :
+		common({ Material::Metal }),
+		metal(metal)
+	{ }
+
+	HitGroupData(GlassData glass) :
+		common({ Material::Glass }),
+		glass(glass)
+	{ }
+
+	HitGroupData(TestData test) :
+		common({ Material::Test }),
+		test(test)
+	{ }
+};
+
+struct CallableData
+{
 };
 
 struct Vertex

@@ -37,6 +37,21 @@ extern "C" {
 __constant__ Params params;
 }
 
+struct HitInfo
+{
+	float3 position;
+	float3 direction;
+	float3 normal;
+};
+
+struct BounceResult
+{
+	float3 attenuation;
+	float3 emitted;
+
+	float3 direction;
+};
+
 //------------------------------------------------------------------------------
 //
 // Orthonormal basis helper
@@ -162,9 +177,9 @@ static __forceinline__ __device__ void traceRadiance(
 {
 	unsigned int u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14;
 
-	u0 = __float_as_uint( prd.attenuation.x );
-	u1 = __float_as_uint( prd.attenuation.y );
-	u2 = __float_as_uint( prd.attenuation.z );
+	u0 = __float_as_uint(prd.attenuation.x);
+	u1 = __float_as_uint(prd.attenuation.y);
+	u2 = __float_as_uint(prd.attenuation.z);
 	u3 = prd.seed;
 	
 	// Note:
@@ -186,9 +201,9 @@ static __forceinline__ __device__ void traceRadiance(
 		RAY_TYPE_COUNT,           // SBT stride
 		0,                        // missSBTIndex
 		u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14);
-	optixReorder(
-		// Application specific coherence hints could be passed in here
-		);
+
+	//optixReorder(reinterpret_cast<CommonData*>(optixHitObjectGetSbtDataPointer())->material_type, 2);
+	//optixReorder();
 
 	optixInvoke(PAYLOAD_TYPE_RADIANCE,
 		u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14);
@@ -202,33 +217,6 @@ static __forceinline__ __device__ void traceRadiance(
 	prd.direction = make_float3(__uint_as_float(u11), __uint_as_float(u12), __uint_as_float(u13));
 	prd.done = u14;
 }
-
-
-// Returns true if ray is occluded, else false
-static __forceinline__ __device__ bool traceOcclusion(
-		OptixTraversableHandle handle,
-		float3                 ray_origin,
-		float3                 ray_direction,
-		float                  tmin,
-		float                  tmax
-		)
-{
-	// We are only casting probe rays so no shader invocation is needed
-	optixTraverse(
-		handle,
-		ray_origin,
-		ray_direction,
-		tmin,
-		tmax, 0.0f,                // rayTime
-		OptixVisibilityMask( 1 ),
-		OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_ANYHIT,
-		0,                         // SBT offset
-		RAY_TYPE_COUNT,            // SBT stride
-		0                          // missSBTIndex
-		);
-	return optixHitObjectIsHit();
-}
-
 
 //------------------------------------------------------------------------------
 //
@@ -247,7 +235,7 @@ extern "C" __global__ void __raygen__rg()
 	const uint3  idx = optixGetLaunchIndex();
 	const int    subframe_index = params.subframe_index;
 
-	unsigned int seed = tea<4>( idx.y*w + idx.x, subframe_index );
+	unsigned int seed = tea<4>(idx.y * w + idx.x, subframe_index);
 
 	float3 result = make_float3(0.0f);
 	int i = params.samples_per_launch;
@@ -264,14 +252,14 @@ extern "C" __global__ void __raygen__rg()
 		float3 ray_direction = normalize(d.x * U + d.y * V + W);
 		float3 ray_origin    = eye;
 
-		float3 totalAttenuation = make_float3(1.0f);
+		float3 total_attenuation = make_float3(1.0f);
 
 		RadiancePRD prd;
 		prd.distance = 0.0f;
 		prd.seed = seed;
 		prd.done = false;
 
-		for (int i = 0; i < 8 && !prd.done; i++)
+		for (int j = 0; j < 8 && !prd.done; j++)
 		{
 			traceRadiance(
 				params.handle,
@@ -282,11 +270,11 @@ extern "C" __global__ void __raygen__rg()
 				prd
 			);
 
-			prd.distance = fmaxf(prd.distance, 1.0f);
+			result += prd.emitted * total_attenuation;
 
-			result += prd.emitted * totalAttenuation;
+			const float clamped_distance = fmaxf(prd.distance, 1.0f);
 
-			totalAttenuation *= prd.attenuation / (prd.distance * prd.distance);
+			total_attenuation *= prd.attenuation / (clamped_distance * clamped_distance);
 
 			ray_origin = prd.origin;
 			ray_direction = prd.direction;
@@ -296,7 +284,7 @@ extern "C" __global__ void __raygen__rg()
 
 	const uint3    launch_index = optixGetLaunchIndex();
 	const unsigned int image_index  = launch_index.y * params.width + launch_index.x;
-	float3         accum_color  = result / static_cast<float>( params.samples_per_launch );
+	float3         accum_color  = result / static_cast<float>(params.samples_per_launch);
 
 	if (subframe_index > 0)
 	{
@@ -304,6 +292,7 @@ extern "C" __global__ void __raygen__rg()
 		const float3 accum_color_prev = make_float3(params.accum_buffer[image_index]);
 		accum_color = lerp(accum_color_prev, accum_color, a);
 	}
+
 	params.accum_buffer[image_index] = make_float4(accum_color, 1.0f);
 	params.frame_buffer[image_index] = make_color(accum_color);
 }
@@ -348,20 +337,86 @@ extern "C" __global__ void __closesthit__radiance()
 
 	RadiancePRD prd = loadClosesthitRadiancePRD();
 
-	const float z1 = rnd(prd.seed);
-	const float z2 = rnd(prd.seed);
+	HitInfo hit;
+	hit.position = P;
+	hit.direction = ray_dir;
+	hit.normal = FFN;
 
-	float3 w_in;
-	cosine_sample_hemisphere(z1, z2, w_in);
-	Onb onb(FFN);
-	onb.inverse_transform(w_in);
+	BounceResult br = optixDirectCall<BounceResult, const HitInfo&, const HitGroupData&, unsigned int&>(
+		rt_data->common.material_type, hit, *rt_data, prd.seed
+	);
 
-	prd.attenuation = rt_data->diffuse_color;
-	prd.emitted = rt_data->emission_color;
-	prd.distance += fmaxf(fabsf(Tmax) * params.distance_scale, 0.0f);
+	prd.attenuation = br.attenuation;
+	prd.emitted = br.emitted;
+	prd.distance += fabsf(Tmax) * params.distance_scale;
 	prd.origin = P;
-	prd.direction = w_in;
+	prd.direction = br.direction;
 	prd.done = false;
 
 	storeClosesthitRadiancePRD(prd);
+}
+
+extern "C" __device__ BounceResult __direct_callable__lambertian(const HitInfo& hit, const HitGroupData& material, unsigned int& seed)
+{
+	const float z1 = rnd(seed);
+	const float z2 = rnd(seed);
+
+	float3 w_in;
+	cosine_sample_hemisphere(z1, z2, w_in);
+	const Onb onb(hit.normal);
+	onb.inverse_transform(w_in);
+
+	return
+	{
+		material.lambertian.attenuation,
+		material.lambertian.emitted,
+		w_in
+	};
+}
+
+extern "C" __device__ BounceResult __direct_callable__metal(const HitInfo& hit, const HitGroupData& material, unsigned int& seed)
+{
+	return
+	{
+		material.metal.attenuation,
+		material.metal.emitted,
+		reflect(hit.direction, hit.normal)
+	};
+}
+
+extern "C" __device__ BounceResult __direct_callable__glass(const HitInfo& hit, const HitGroupData& material, unsigned int& seed)
+{
+	float3 new_direction;
+	if (!refract(new_direction, hit.direction, hit.normal, material.glass.refractive_index) && rnd(seed) > fresnel_schlick(dot(hit.direction, hit.normal)))
+	{
+		new_direction = reflect(hit.direction, hit.normal);
+	}
+
+	return
+	{
+		material.glass.attenuation,
+		material.glass.emitted,
+		new_direction
+	};
+}
+
+extern "C" __device__ BounceResult __direct_callable__test(const HitInfo & hit, const HitGroupData & material, unsigned int& seed)
+{
+	const float multiplier = clamp(dot(hit.normal, -hit.direction), 0.0f, 1.0f);
+
+	float3 w_in;
+	cosine_sample_hemisphere(multiplier, 1.0f - multiplier, w_in);
+	const Onb onb(hit.normal);
+	onb.inverse_transform(w_in);
+
+	const Onb onb2(w_in);
+	cosine_sample_hemisphere(1.0f - multiplier, multiplier, w_in);
+	onb.inverse_transform(w_in);
+
+	return
+	{
+		material.test.attenuation,
+		material.test.emitted,
+		reflect(hit.direction, w_in)
+	};
 }
