@@ -133,12 +133,12 @@ struct PathTracerState
 const geo::GeometryData geo_data = geo::GeometryData::MakeData(
 	{
 		geo::Box({ 300.0f, 200.0f, 200.0f }, ~geo::Box::Right, sutil::Matrix4x4::translate({50.0f, 0.0f, 0.0f}), LambertianData{{0.3f, 0.3f, 0.3f}, {0.0f, 0.0f, 0.0f}}),
-		geo::Box({ 60.0f, 5.0f, 60.0f }, sutil::Matrix4x4::translate({ 0.0f, 97.4f, 0.0f }), LambertianData{ { 0.1f, 0.1f, 0.1f }, { 7.5f, 7.5f, 7.5f } }),
-		geo::Box({ 60.0f, 125.0f, 60.0f }, sutil::Matrix4x4::translate({ -45.0f, -37.4f, -45.0f }) * sutil::Matrix4x4::rotate(1.4f, { 0.0f, 1.0f, 0.0f }), LambertianData{ { 0.9f, 0.4f, 0.1f }, { 0.0f, 0.0f, 0.0f } }),
-		geo::Box({ 40.0f, 65.0f, 40.0f }, sutil::Matrix4x4::translate({ 45.0f, -67.4f, 45.0f }) * sutil::Matrix4x4::rotate(-1.2f, { 0.0f, 1.0f, 0.0f }), LambertianData{ { 0.9f, 0.4f, 0.1f }, { 0.0f, 0.0f, 0.0f } }),
-		geo::Icosphere(20.0f, 3, sutil::Matrix4x4::translate({ -60.0f, 0.0f, 60.0f }), MetalData{ { 0.6f, 0.9f, 0.15f }, { 0.0f, 0.0f, 0.0f } }),
-		geo::Icosphere(20.0f, 3, sutil::Matrix4x4::translate({ 30.0f, -55.0f, -30.0f }), GlassData{ { 0.8f, 0.2f, 0.8f }, { 0.0f, 0.0f, 0.0f }, 1.54f }),
-		geo::Icosphere(20.0f, 3, sutil::Matrix4x4::translate({ 60.0f, 0.0f, -60.0f }), LambertianData{ { 0.6f, 0.9f, 0.15f }, { 0.0f, 0.0f, 0.0f } }),
+		geo::Box({ 60.0f, 5.0f, 60.0f }, sutil::Matrix4x4::translate({ 0.0f, 97.4f, 0.0f }), GlassData{ { 0.1f, 0.1f, 0.1f }, { 7.5f, 7.5f, 7.5f }, 1.4f }),
+		geo::Box({ 60.0f, 125.0f, 60.0f }, sutil::Matrix4x4::translate({ -45.0f, -37.4f, -45.0f }) * sutil::Matrix4x4::rotate(1.4f, { 0.0f, 1.0f, 0.0f }), GlassData{ { 0.9f, 0.4f, 0.1f }, { 0.0f, 0.0f, 0.0f }, 1.4f }),
+		geo::Box({ 40.0f, 65.0f, 40.0f }, sutil::Matrix4x4::translate({ 45.0f, -67.4f, 45.0f }) * sutil::Matrix4x4::rotate(-1.2f, { 0.0f, 1.0f, 0.0f }), GlassData{ { 0.9f, 0.4f, 0.1f }, { 0.0f, 0.0f, 0.0f }, 1.4f }),
+		geo::Icosphere(20.0f, 4, sutil::Matrix4x4::translate({ -60.0f, 0.0f, 60.0f }), GlassData{ { 0.6f, 0.9f, 0.15f }, { 0.0f, 0.0f, 0.0f }, 1.4f }),
+		geo::Icosphere(20.0f, 8, sutil::Matrix4x4::translate({ 30.0f, -55.0f, -30.0f }), GlassData{ { 0.5f, 0.8f, 0.9f }, { 0.0f, 0.0f, 0.0f }, 1.4f }),
+		geo::Icosphere(20.0f, 8, sutil::Matrix4x4::translate({ 60.0f, 0.0f, -60.0f }), GlassData{ { 0.5f, 0.8f, 0.9f }, { 0.0f, 0.0f, 0.0f }, 1.4f }),
 	}
 );
 
@@ -262,7 +262,7 @@ void initLaunchParams(PathTracerState& state)
 
 	state.params.handle = state.gas_handle;
 
-	state.params.distance_scale = 1.0f / 250.0f;
+	state.params.distance_scale = 1.0f / 350.0f;
 
 	state.params.normals = reinterpret_cast<float4*>(state.normals);
 	state.params.indices = reinterpret_cast<uint4*>(state.indices);

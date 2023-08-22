@@ -41,7 +41,9 @@ struct HitInfo
 {
 	float3 position;
 	float3 direction;
+	float3 actual_normal;
 	float3 normal;
+	float distance;
 };
 
 struct BounceResult
@@ -325,22 +327,26 @@ extern "C" __global__ void __closesthit__radiance()
 	const float3 N_1 = make_float3(params.normals[tri.y]);
 	const float3 N_2 = make_float3(params.normals[tri.z]);
 
-	const float3 N =
+	const float3 actual_normal =
 		N_0 * (1.0f - barycentrics.x - barycentrics.y) +
 		N_1 * barycentrics.x +
 		N_2 * barycentrics.y;
 
 	const float3 ray_dir = optixGetWorldRayDirection();
-	const float3 FFN = faceforward(N, -ray_dir, N);
-	const float Tmax = optixGetRayTmax();
-	const float3 P = optixGetWorldRayOrigin() + Tmax * ray_dir;
+	const float3 forward_facing_normal = faceforward(actual_normal, -ray_dir, actual_normal);
+	const float t_max = optixGetRayTmax();
+	const float3 P = optixGetWorldRayOrigin() + t_max * ray_dir;
 
 	RadiancePRD prd = loadClosesthitRadiancePRD();
+
+	const float scaled_distance = fabsf(t_max) * params.distance_scale;
 
 	HitInfo hit;
 	hit.position = P;
 	hit.direction = ray_dir;
-	hit.normal = FFN;
+	hit.actual_normal = actual_normal;
+	hit.normal = forward_facing_normal;
+	hit.distance = fmaxf(scaled_distance, 1.0f);
 
 	BounceResult br = optixDirectCall<BounceResult, const HitInfo&, const HitGroupData&, unsigned int&>(
 		rt_data->common.material_type, hit, *rt_data, prd.seed
@@ -348,7 +354,7 @@ extern "C" __global__ void __closesthit__radiance()
 
 	prd.attenuation = br.attenuation;
 	prd.emitted = br.emitted;
-	prd.distance += fabsf(Tmax) * params.distance_scale;
+	prd.distance += scaled_distance;
 	prd.origin = P;
 	prd.direction = br.direction;
 	prd.done = false;
@@ -387,9 +393,26 @@ extern "C" __device__ BounceResult __direct_callable__metal(const HitInfo& hit, 
 extern "C" __device__ BounceResult __direct_callable__glass(const HitInfo& hit, const HitGroupData& material, unsigned int& seed)
 {
 	float3 new_direction;
-	if (!refract(new_direction, hit.direction, hit.normal, material.glass.refractive_index) && rnd(seed) > fresnel_schlick(dot(hit.direction, hit.normal)))
+	if (!refract(new_direction, hit.direction, hit.normal, material.glass.refractive_index))
 	{
 		new_direction = reflect(hit.direction, hit.normal);
+	}
+	else
+	{
+		float cos_theta = dot(hit.direction, hit.normal);
+		if (cos_theta < 0.0f)
+		{
+			cos_theta = -cos_theta;
+		}
+		else
+		{
+			cos_theta = dot(new_direction, hit.normal);
+		}
+
+		if (rnd(seed) <= fresnel_schlick(cos_theta, material.glass.refractive_index))
+		{
+			new_direction = reflect(hit.direction, hit.normal);
+		}
 	}
 
 	return
