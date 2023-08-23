@@ -8,6 +8,8 @@
 
 #include <sutil/Matrix.h>
 
+#include <istream>
+
 namespace geo
 {
 	using Vertices = std::vector<Vertex>;
@@ -65,6 +67,15 @@ namespace geo
 
 	private:
 		static VerticesIndices Make(float radius, unsigned int subdivisions, float randomness, sutil::Matrix4x4 transform);
+	};
+
+	class Obj : public Geometry
+	{
+	public:
+		Obj(std::istream& stream, sutil::Matrix4x4 transform, HitGroupData data);
+
+	private:
+		static VerticesIndices Make(std::istream& stream, sutil::Matrix4x4 transform);
 	};
 
 	struct GeometryData

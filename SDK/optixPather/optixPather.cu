@@ -44,6 +44,7 @@ struct HitInfo
 	float3 actual_normal;
 	float3 normal;
 	float distance;
+	bool entering;
 };
 
 struct BounceResult
@@ -333,7 +334,8 @@ extern "C" __global__ void __closesthit__radiance()
 		N_2 * barycentrics.y;
 
 	const float3 ray_dir = optixGetWorldRayDirection();
-	const float3 forward_facing_normal = faceforward(actual_normal, -ray_dir, actual_normal);
+	const float sign = copysignf(1.0f, dot(-ray_dir, actual_normal));
+	const float3 forward_facing_normal = actual_normal * sign;
 	const float t_max = optixGetRayTmax();
 	const float3 P = optixGetWorldRayOrigin() + t_max * ray_dir;
 
@@ -347,6 +349,7 @@ extern "C" __global__ void __closesthit__radiance()
 	hit.actual_normal = actual_normal;
 	hit.normal = forward_facing_normal;
 	hit.distance = fmaxf(scaled_distance, 1.0f);
+	hit.entering = sign > 0.0f;
 
 	BounceResult br = optixDirectCall<BounceResult, const HitInfo&, const HitGroupData&, unsigned int&>(
 		rt_data->common.material_type, hit, *rt_data, prd.seed
@@ -415,9 +418,20 @@ extern "C" __device__ BounceResult __direct_callable__glass(const HitInfo& hit, 
 		}
 	}
 
+	float3 attenuation;
+	if (hit.entering)
+	{
+		attenuation = material.glass.attenuation;
+	}
+	else
+	{
+		const float3 absorbance = (1.0f - material.glass.attenuation) * hit.distance;
+		attenuation = expf(-absorbance);
+	}
+
 	return
 	{
-		material.glass.attenuation,
+		attenuation,
 		material.glass.emitted,
 		new_direction
 	};

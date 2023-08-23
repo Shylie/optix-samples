@@ -4,6 +4,8 @@
 
 #include <array>
 #include <map>
+#include <string>
+#include <sstream>
 
 namespace geo
 {
@@ -285,6 +287,59 @@ namespace geo
 		}
 
 		return v;
+	}
+
+	Obj::Obj(std::istream& stream, sutil::Matrix4x4 transform, HitGroupData data) :
+		Geometry(Make(stream, transform), data)
+	{ }
+
+	VerticesIndices Obj::Make(std::istream& stream, sutil::Matrix4x4 transform)
+	{
+		VerticesIndices vi;
+
+		std::string line;
+		while (std::getline(stream, line))
+		{
+			std::istringstream ss(line);
+
+			char first;
+			ss >> first;
+
+			switch (first)
+			{
+			case 'v':
+			{
+				float3 v;
+				ss >> v.x;
+				ss >> v.y;
+				ss >> v.z;
+				vi.first.emplace_back(transform * make_float4(v));
+				break;
+			}
+
+			case 'f':
+			{
+				uint3 i;
+				ss >> i.x;
+
+				std::string _;
+				std::getline(ss, _, '/');
+				std::getline(ss, _, '/');
+
+				ss >> i.y;
+
+				std::getline(ss, _, '/');
+				std::getline(ss, _, '/');
+
+				ss >> i.z;
+
+				vi.second.emplace_back(i - make_uint3(1));
+				break;
+			}
+			}
+		}
+
+		return vi;
 	}
 
 	GeometryData GeometryData::MakeData(std::vector<Geometry> geometries)
