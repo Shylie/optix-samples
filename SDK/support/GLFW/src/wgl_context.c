@@ -94,7 +94,9 @@ static int choosePixelFormat(_GLFWwindow* window, const _GLFWfbconfig* desired)
             }
 
             if (getPixelFormatAttrib(window, n, WGL_PIXEL_TYPE_ARB) !=
-                WGL_TYPE_RGBA_ARB)
+                WGL_TYPE_RGBA_ARB &&
+                getPixelFormatAttrib(window, n, WGL_PIXEL_TYPE_ARB) !=
+                WGL_TYPE_RGBA_FLOAT_ARB)
             {
                 continue;
             }
@@ -124,6 +126,8 @@ static int choosePixelFormat(_GLFWwindow* window, const _GLFWfbconfig* desired)
                 u->stereo = GLFW_TRUE;
             if (getPixelFormatAttrib(window, n, WGL_DOUBLE_BUFFER_ARB))
                 u->doublebuffer = GLFW_TRUE;
+            if (getPixelFormatAttrib(window, n, WGL_PIXEL_TYPE_ARB) == WGL_TYPE_RGBA_FLOAT_ARB)
+                u->floatPixelType = GLFW_TRUE;
 
             if (_glfw.wgl.ARB_multisample)
                 u->samples = getPixelFormatAttrib(window, n, WGL_SAMPLES_ARB);

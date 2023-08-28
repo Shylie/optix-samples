@@ -308,6 +308,7 @@ struct _GLFWfbconfig
     int         samples;
     GLFWbool    sRGB;
     GLFWbool    doublebuffer;
+    GLFWbool    floatPixelType;
     uintptr_t   handle;
 };
 

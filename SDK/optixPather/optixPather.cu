@@ -297,7 +297,7 @@ extern "C" __global__ void __raygen__rg()
 	}
 
 	params.accum_buffer[image_index] = make_float4(accum_color, 1.0f);
-	params.frame_buffer[image_index] = make_color(accum_color);
+	params.frame_buffer[image_index] = make_float4(accum_color, 1.0f);
 }
 
 

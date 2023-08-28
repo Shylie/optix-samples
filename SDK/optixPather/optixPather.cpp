@@ -49,8 +49,6 @@
 
 #include <GLFW/glfw3.h>
 
-#include "optixPather.h"
-
 #include <array>
 #include <cstring>
 #include <fstream>
@@ -59,6 +57,7 @@
 #include <sstream>
 #include <string>
 
+#include "optixPather.h"
 #include "geometry.h"
 
 bool resize_dirty = false;
@@ -72,7 +71,7 @@ sutil::Trackball trackball;
 // Mouse state
 int32_t mouse_button = -1;
 
-int32_t samples_per_launch = 2;
+int32_t samples_per_launch = 16;
 
 //------------------------------------------------------------------------------
 //
@@ -132,8 +131,8 @@ struct PathTracerState
 
 const geo::GeometryData geo_data = geo::GeometryData::MakeData(
 	{
-		geo::Obj(std::ifstream("orb.obj"), sutil::Matrix4x4::identity(), LambertianData{ { 0.0f, 0.0f, 0.0f }, { 0.5f, 0.75f, 1.25f } }),
-		geo::Obj(std::ifstream("wizard.obj"), sutil::Matrix4x4::identity(), LambertianData{ { 0.9f, 0.9f, 0.9f }, { 0.0f, 0.0f, 0.0f } })
+		geo::Obj(std::ifstream("orb.obj"), sutil::Matrix4x4::identity(), LambertianData{ { 0.0f, 0.0f, 0.0f }, { 5.0f, 7.5f, 12.5f } }),
+		geo::Obj(std::ifstream("wizard.obj"), sutil::Matrix4x4::identity(), LambertianData{ { 0.9f, 0.9f, 0.6f }, { 0.0f, 0.0f, 0.0f } })
 	}
 );
 
@@ -279,7 +278,7 @@ void handleCameraUpdate(Params& params)
 }
 
 
-void handleResize(sutil::CUDAOutputBuffer<uchar4>& output_buffer, Params& params)
+void handleResize(sutil::CUDAOutputBuffer<float4>& output_buffer, Params& params)
 {
 	if (!resize_dirty)
 		return;
@@ -296,7 +295,7 @@ void handleResize(sutil::CUDAOutputBuffer<uchar4>& output_buffer, Params& params
 }
 
 
-void updateState(sutil::CUDAOutputBuffer<uchar4>& output_buffer, Params& params)
+void updateState(sutil::CUDAOutputBuffer<float4>& output_buffer, Params& params)
 {
 	// Update params on device
 	if (camera_changed || resize_dirty)
@@ -307,10 +306,10 @@ void updateState(sutil::CUDAOutputBuffer<uchar4>& output_buffer, Params& params)
 }
 
 
-void launchSubframe(sutil::CUDAOutputBuffer<uchar4>& output_buffer, PathTracerState& state)
+void launchSubframe(sutil::CUDAOutputBuffer<float4>& output_buffer, PathTracerState& state)
 {
 	// Launch
-	uchar4* result_buffer_data = output_buffer.map();
+	float4* result_buffer_data = output_buffer.map();
 	state.params.frame_buffer = result_buffer_data;
 	CUDA_CHECK(cudaMemcpyAsync(
 		reinterpret_cast<void*>(state.d_params),
@@ -333,7 +332,7 @@ void launchSubframe(sutil::CUDAOutputBuffer<uchar4>& output_buffer, PathTracerSt
 }
 
 
-void displaySubframe(sutil::CUDAOutputBuffer<uchar4>& output_buffer, sutil::GLDisplay& gl_display, GLFWwindow* window)
+void displaySubframe(sutil::CUDAOutputBuffer<float4>& output_buffer, sutil::GLDisplay& gl_display, GLFWwindow* window)
 {
 	// Display
 	int framebuf_res_x = 0;  // The display's resolution (could be HDPI res)
@@ -815,7 +814,6 @@ void cleanupState(PathTracerState& state)
 	CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.d_params)));
 }
 
-
 //------------------------------------------------------------------------------
 //
 // Main
@@ -833,6 +831,8 @@ int main(int argc, char* argv[])
 	// Parse command line options
 	//
 	std::string outfile;
+
+	bool use_hdr = true;
 
 	for (int i = 1; i < argc; ++i)
 	{
@@ -865,6 +865,10 @@ int main(int argc, char* argv[])
 				printUsageAndExit(argv[0]);
 			samples_per_launch = atoi(argv[++i]);
 		}
+		else if (arg == "--no-hdr")
+		{
+			use_hdr = false;
+		}
 		else
 		{
 			std::cerr << "Unknown option '" << argv[i] << "'\n";
@@ -887,10 +891,28 @@ int main(int argc, char* argv[])
 		createSBT(state);
 		initLaunchParams(state);
 
-
 		if (outfile.empty())
 		{
-			GLFWwindow* window = sutil::initUI("optixPathTracer", state.params.width, state.params.height);
+			if (!glfwInit())
+			{
+				throw sutil::Exception("Failed to initialize GLFW");
+			}
+
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+			glfwWindowHint(GLFW_FLOAT_PIXEL_TYPE, use_hdr);
+
+			GLFWwindow* window = glfwCreateWindow(state.params.width, state.params.height, "optixPather", nullptr, nullptr);
+			if (!window)
+			{
+				throw sutil::Exception("Failed to create GLFW window");
+			}
+
+			glfwMakeContextCurrent(window);
+			glfwSwapInterval(0);
+
 			glfwSetMouseButtonCallback(window, mouseButtonCallback);
 			glfwSetCursorPosCallback(window, cursorPosCallback);
 			glfwSetWindowSizeCallback(window, windowSizeCallback);
@@ -899,18 +921,21 @@ int main(int argc, char* argv[])
 			glfwSetScrollCallback(window, scrollCallback);
 			glfwSetWindowUserPointer(window, &state.params);
 
+			sutil::initGL();
+			sutil::initImGui(window);
+
 			//
 			// Render loop
 			//
 			{
-				sutil::CUDAOutputBuffer<uchar4> output_buffer(
+				sutil::CUDAOutputBuffer<float4> output_buffer(
 					output_buffer_type,
 					state.params.width,
 					state.params.height
 				);
 
 				output_buffer.setStream(state.stream);
-				sutil::GLDisplay gl_display;
+				sutil::GLDisplay gl_display(sutil::FLOAT4);
 
 				std::chrono::duration<double> state_update_time(0.0);
 				std::chrono::duration<double> render_time(0.0);
@@ -957,7 +982,7 @@ int main(int argc, char* argv[])
 			{
 				// this scope is for output_buffer, to ensure the destructor is called bfore glfwTerminate()
 
-				sutil::CUDAOutputBuffer<uchar4> output_buffer(
+				sutil::CUDAOutputBuffer<float4> output_buffer(
 					output_buffer_type,
 					state.params.width,
 					state.params.height

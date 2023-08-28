@@ -181,6 +181,12 @@ const _GLFWfbconfig* _glfwChooseFBConfig(const _GLFWfbconfig* desired,
             continue;
         }
 
+        if (desired->floatPixelType != current->floatPixelType)
+        {
+            // Float pixel type is a hard constraint
+            continue;
+        }
+
         // Count number of missing buffers
         {
             missing = 0;
